@@ -337,3 +337,124 @@ serverless remove --stage dev
 - **Comprehensive logging** and monitoring
 
 This architecture provides a solid foundation for an Event Management CRM that can scale from startup to enterprise while maintaining cost efficiency and developer productivity.
+
+## 📝 API Usage Examples
+
+### Quick Start with cURL
+
+Once your API is running (locally or deployed), you can test it using these curl examples:
+
+#### 1. Health Check
+```bash
+curl -X GET "http://localhost:8000/health"
+```
+
+#### 2. Create a User
+```bash
+curl -X POST "http://localhost:8000/users" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "firstName": "John",
+    "lastName": "Doe",
+    "email": "john.doe@techcorp.com",
+    "phoneNumber": "+1-555-0123",
+    "jobTitle": "Software Engineer",
+    "company": "TechCorp",
+    "city": "San Francisco",
+    "state": "CA"
+  }'
+```
+
+#### 3. Filter Users by Company
+```bash
+curl -X GET "http://localhost:8000/users/filter?company=TechCorp&page=1&pageSize=10"
+```
+
+#### 4. Create an Event
+```bash
+curl -X POST "http://localhost:8000/events" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "slug": "tech-meetup-2024",
+    "title": "Tech Meetup 2024",
+    "description": "Annual technology meetup for developers",
+    "startAt": "2024-12-15T18:00:00Z",
+    "endAt": "2024-12-15T22:00:00Z",
+    "venue": "San Francisco Convention Center",
+    "maxCapacity": 200,
+    "owner": "USER_ID_HERE",
+    "hosts": ["USER_ID_HERE"],
+    "attendees": []
+  }'
+```
+
+#### 5. Send Email to Filtered Users
+```bash
+curl -X POST "http://localhost:8000/emails/send-filtered" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "subject": "Tech Meetup 2024 - Save the Date!",
+    "message": "Join us for our annual tech meetup on December 15th!",
+    "company": "TechCorp"
+  }'
+```
+
+#### 6. Send Email to Specific Users
+```bash
+curl -X POST "http://localhost:8000/emails/send" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "userIds": ["USER_ID_1", "USER_ID_2"],
+    "subject": "Personal Invitation",
+    "message": "You are personally invited to our exclusive event!"
+  }'
+```
+
+#### 7. Get Email Statistics
+```bash
+curl -X GET "http://localhost:8000/emails/stats"
+```
+
+#### 8. Advanced User Filtering
+```bash
+# Filter by multiple criteria with sorting
+curl -X GET "http://localhost:8000/users/filter?company=TechCorp&city=San%20Francisco&hostedEventCountMin=1&sortBy=hostedEventCount&sortOrder=desc&page=1&pageSize=5"
+
+# Filter by job title
+curl -X GET "http://localhost:8000/users/filter?jobTitle=Software%20Engineer&page=1&pageSize=10"
+
+# Filter by event count ranges
+curl -X GET "http://localhost:8000/users/filter?hostedEventCountMin=2&attendedEventCountMax=10&page=1&pageSize=10"
+```
+
+### For Production Deployments
+
+Replace `http://localhost:8000` with your deployed URL:
+
+- **Fargate**: `http://your-alb-dns-name.amazonaws.com`
+- **Lambda**: `https://your-api-gateway-id.execute-api.region.amazonaws.com/stage`
+
+### Complete Testing Workflow
+
+1. **Start the API** (local or deployed)
+2. **Create a user** and save the returned `id`
+3. **Create an event** using the user ID as owner
+4. **Send emails** to filtered users or specific user IDs
+5. **Check email statistics** to see delivery status
+6. **Filter users** by various criteria to test the search functionality
+
+### API Documentation
+
+Visit the interactive API documentation at:
+- **Local**: http://localhost:8000/docs
+- **Deployed**: `{your-base-url}/docs`
+
+The Swagger UI provides detailed information about all endpoints, request/response schemas, and allows you to test the API directly from the browser.
+
+### Postman Collection
+
+For more comprehensive testing, import the Postman collection from `examples/postman_collection.json` which includes:
+- All API endpoints with sample data
+- Environment variables for easy switching between local/staging/production
+- Automated tests and variable extraction
+- Complete user journey workflows

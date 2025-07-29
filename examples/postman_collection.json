@@ -1,0 +1,688 @@
+{
+  "info": {
+    "name": "Event Management CRM API",
+    "description": "Comprehensive API collection for Event Management CRM system with user management, event creation, email campaigns, and tracking functionality.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "version": "1.0.0"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8000",
+      "description": "Base URL for the API (local development)"
+    },
+    {
+      "key": "fargateUrl",
+      "value": "http://your-alb-dns-name.amazonaws.com",
+      "description": "Base URL for Fargate deployment"
+    },
+    {
+      "key": "lambdaUrl",
+      "value": "https://your-api-gateway-id.execute-api.us-east-1.amazonaws.com/dev",
+      "description": "Base URL for Lambda deployment"
+    },
+    {
+      "key": "userId",
+      "value": "",
+      "description": "Sample user ID for testing"
+    },
+    {
+      "key": "eventId",
+      "value": "",
+      "description": "Sample event ID for testing"
+    },
+    {
+      "key": "emailId",
+      "value": "",
+      "description": "Sample email ID for tracking"
+    }
+  ],
+  "item": [
+    {
+      "name": "Health Check",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/health",
+          "host": ["{{baseUrl}}"],
+          "path": ["health"]
+        },
+        "description": "Check API health status"
+      },
+      "response": []
+    },
+    {
+      "name": "API Root",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/",
+          "host": ["{{baseUrl}}"],
+          "path": [""]
+        },
+        "description": "Get API information and available endpoints"
+      },
+      "response": []
+    },
+    {
+      "name": "User Management",
+      "item": [
+        {
+          "name": "Create User",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    const responseJson = pm.response.json();",
+                  "    pm.collectionVariables.set('userId', responseJson.id);",
+                  "    console.log('User ID set to: ' + responseJson.id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"firstName\": \"John\",\n  \"lastName\": \"Doe\",\n  \"email\": \"john.doe@techcorp.com\",\n  \"phoneNumber\": \"+1-555-0123\",\n  \"avatar\": \"https://example.com/avatars/john.jpg\",\n  \"gender\": \"male\",\n  \"jobTitle\": \"Software Engineer\",\n  \"company\": \"TechCorp\",\n  \"city\": \"San Francisco\",\n  \"state\": \"CA\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/users",
+              "host": ["{{baseUrl}}"],
+              "path": ["users"]
+            },
+            "description": "Create a new user in the system"
+          },
+          "response": []
+        },
+        {
+          "name": "Get User by ID",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/users/{{userId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["users", "{{userId}}"]
+            },
+            "description": "Retrieve user details by user ID"
+          },
+          "response": []
+        },
+        {
+          "name": "Update User",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"jobTitle\": \"Senior Software Engineer\",\n  \"company\": \"TechCorp Inc\",\n  \"phoneNumber\": \"+1-555-0124\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/users/{{userId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["users", "{{userId}}"]
+            },
+            "description": "Update user information"
+          },
+          "response": []
+        },
+        {
+          "name": "Filter Users - Basic",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/users/filter?page=1&pageSize=10",
+              "host": ["{{baseUrl}}"],
+              "path": ["users", "filter"],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "pageSize",
+                  "value": "10"
+                }
+              ]
+            },
+            "description": "Get paginated list of all users"
+          },
+          "response": []
+        },
+        {
+          "name": "Filter Users - By Company",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/users/filter?company=TechCorp&page=1&pageSize=5",
+              "host": ["{{baseUrl}}"],
+              "path": ["users", "filter"],
+              "query": [
+                {
+                  "key": "company",
+                  "value": "TechCorp"
+                },
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "pageSize",
+                  "value": "5"
+                }
+              ]
+            },
+            "description": "Filter users by company name"
+          },
+          "response": []
+        },
+        {
+          "name": "Filter Users - By Job Title",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/users/filter?jobTitle=Software Engineer&page=1&pageSize=10",
+              "host": ["{{baseUrl}}"],
+              "path": ["users", "filter"],
+              "query": [
+                {
+                  "key": "jobTitle",
+                  "value": "Software Engineer"
+                },
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "pageSize",
+                  "value": "10"
+                }
+              ]
+            },
+            "description": "Filter users by job title"
+          },
+          "response": []
+        },
+        {
+          "name": "Filter Users - By Event Count",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/users/filter?hostedEventCountMin=1&attendedEventCountMax=5&page=1&pageSize=10",
+              "host": ["{{baseUrl}}"],
+              "path": ["users", "filter"],
+              "query": [
+                {
+                  "key": "hostedEventCountMin",
+                  "value": "1"
+                },
+                {
+                  "key": "attendedEventCountMax",
+                  "value": "5"
+                },
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "pageSize",
+                  "value": "10"
+                }
+              ]
+            },
+            "description": "Filter users by event count ranges"
+          },
+          "response": []
+        },
+        {
+          "name": "Filter Users - Complex Filter",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/users/filter?company=TechCorp&city=San Francisco&hostedEventCountMin=2&sortBy=hostedEventCount&sortOrder=desc&page=1&pageSize=10",
+              "host": ["{{baseUrl}}"],
+              "path": ["users", "filter"],
+              "query": [
+                {
+                  "key": "company",
+                  "value": "TechCorp"
+                },
+                {
+                  "key": "city",
+                  "value": "San Francisco"
+                },
+                {
+                  "key": "hostedEventCountMin",
+                  "value": "2"
+                },
+                {
+                  "key": "sortBy",
+                  "value": "hostedEventCount"
+                },
+                {
+                  "key": "sortOrder",
+                  "value": "desc"
+                },
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "pageSize",
+                  "value": "10"
+                }
+              ]
+            },
+            "description": "Complex user filtering with multiple criteria and sorting"
+          },
+          "response": []
+        },
+        {
+          "name": "Get User's Hosted Events",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/users/{{userId}}/events/hosted",
+              "host": ["{{baseUrl}}"],
+              "path": ["users", "{{userId}}", "events", "hosted"]
+            },
+            "description": "Get events hosted by a specific user"
+          },
+          "response": []
+        },
+        {
+          "name": "Get User's Email Stats",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/users/{{userId}}/email-stats",
+              "host": ["{{baseUrl}}"],
+              "path": ["users", "{{userId}}", "email-stats"]
+            },
+            "description": "Get email statistics for a specific user"
+          },
+          "response": []
+        }
+      ],
+      "description": "User management endpoints for creating, updating, and filtering users"
+    },
+    {
+      "name": "Event Management",
+      "item": [
+        {
+          "name": "Create Event",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    const responseJson = pm.response.json();",
+                  "    pm.collectionVariables.set('eventId', responseJson.id);",
+                  "    console.log('Event ID set to: ' + responseJson.id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"slug\": \"tech-meetup-2024\",\n  \"title\": \"Tech Meetup 2024\",\n  \"description\": \"Annual technology meetup bringing together developers, designers, and tech enthusiasts from the Bay Area.\",\n  \"startAt\": \"2024-12-15T18:00:00Z\",\n  \"endAt\": \"2024-12-15T22:00:00Z\",\n  \"venue\": \"San Francisco Convention Center, Hall A\",\n  \"maxCapacity\": 200,\n  \"owner\": \"{{userId}}\",\n  \"hosts\": [\"{{userId}}\"],\n  \"attendees\": []\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/events",
+              "host": ["{{baseUrl}}"],
+              "path": ["events"]
+            },
+            "description": "Create a new event (triggers DynamoDB stream for user count updates)"
+          },
+          "response": []
+        },
+        {
+          "name": "Get Event by ID",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/events/{{eventId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["events", "{{eventId}}"]
+            },
+            "description": "Retrieve event details by event ID"
+          },
+          "response": []
+        },
+        {
+          "name": "Get Event by Slug",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/events/slug/tech-meetup-2024",
+              "host": ["{{baseUrl}}"],
+              "path": ["events", "slug", "tech-meetup-2024"]
+            },
+            "description": "Retrieve event details by unique slug"
+          },
+          "response": []
+        },
+        {
+          "name": "Update Event",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Tech Meetup 2024 - Extended Edition\",\n  \"description\": \"Annual technology meetup with extended networking sessions and more workshops.\",\n  \"maxCapacity\": 250,\n  \"venue\": \"San Francisco Convention Center, Hall A & B\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/events/{{eventId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["events", "{{eventId}}"]
+            },
+            "description": "Update event information"
+          },
+          "response": []
+        },
+        {
+          "name": "Add Attendee to Event",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/events/{{eventId}}/attendees/{{userId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["events", "{{eventId}}", "attendees", "{{userId}}"]
+            },
+            "description": "Add a user as an attendee to an event (checks capacity limits)"
+          },
+          "response": []
+        },
+        {
+          "name": "Remove Attendee from Event",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/events/{{eventId}}/attendees/{{userId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["events", "{{eventId}}", "attendees", "{{userId}}"]
+            },
+            "description": "Remove a user from event attendees"
+          },
+          "response": []
+        },
+        {
+          "name": "Get Events by Owner",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/events/owner/{{userId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["events", "owner", "{{userId}}"]
+            },
+            "description": "Get all events owned by a specific user"
+          },
+          "response": []
+        }
+      ],
+      "description": "Event management endpoints for creating, updating, and managing events"
+    },
+    {
+      "name": "Email Management",
+      "item": [
+        {
+          "name": "Send Email to Specific Users",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const responseJson = pm.response.json();",
+                  "    if (responseJson.emails && responseJson.emails.length > 0) {",
+                  "        pm.collectionVariables.set('emailId', responseJson.emails[0].id);",
+                  "        console.log('Email ID set to: ' + responseJson.emails[0].id);",
+                  "    }",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userIds\": [\"{{userId}}\"],\n  \"subject\": \"Personal Invitation to Tech Meetup 2024\",\n  \"message\": \"Hi there!\\n\\nYou are personally invited to our exclusive Tech Meetup 2024. This year's event features:\\n\\n• Keynote speakers from top tech companies\\n• Hands-on workshops and coding sessions\\n• Networking opportunities with industry leaders\\n• Free food and drinks\\n\\nDon't miss out on this amazing opportunity!\\n\\nBest regards,\\nThe Tech Meetup Team\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/emails/send",
+              "host": ["{{baseUrl}}"],
+              "path": ["emails", "send"]
+            },
+            "description": "Send personalized emails to specific users by ID"
+          },
+          "response": []
+        },
+        {
+          "name": "Send Email to Filtered Users",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"subject\": \"Tech Meetup 2024 - Save the Date!\",\n  \"message\": \"Dear Tech Professional,\\n\\nWe're excited to announce our annual Tech Meetup 2024!\\n\\n📅 Date: December 15, 2024\\n🕕 Time: 6:00 PM - 10:00 PM\\n📍 Location: San Francisco Convention Center\\n\\nAs a valued member of the TechCorp community, you're invited to join us for:\\n\\n✨ Inspiring keynote presentations\\n💻 Interactive coding workshops\\n🤝 Networking with 200+ tech professionals\\n🍕 Complimentary dinner and refreshments\\n\\nRSVP soon as spots are limited!\\n\\nSee you there,\\nThe Event Team\",\n  \"company\": \"TechCorp\",\n  \"hostedEventCountMin\": 1\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/emails/send-filtered",
+              "host": ["{{baseUrl}}"],
+              "path": ["emails", "send-filtered"]
+            },
+            "description": "Send bulk emails to users matching filter criteria"
+          },
+          "response": []
+        },
+        {
+          "name": "Send Email to Job Title Filter",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"subject\": \"Exclusive Workshop for Software Engineers\",\n  \"message\": \"Hello Software Engineer,\\n\\nWe have a special workshop designed just for you!\\n\\n🔧 Advanced API Design Patterns\\n🚀 Microservices Architecture\\n⚡ Performance Optimization Techniques\\n\\nLimited to 50 participants. Register now!\\n\\nBest,\\nWorkshop Team\",\n  \"jobTitle\": \"Software Engineer\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/emails/send-filtered",
+              "host": ["{{baseUrl}}"],
+              "path": ["emails", "send-filtered"]
+            },
+            "description": "Send targeted emails to users with specific job titles"
+          },
+          "response": []
+        },
+        {
+          "name": "Send Email to Geographic Filter",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"subject\": \"Bay Area Tech Networking Event\",\n  \"message\": \"Hey Bay Area Tech Community!\\n\\n🌉 Local networking event in your city\\n📍 Easy to reach venue in San Francisco\\n🚗 Parking available\\n🚊 Near public transportation\\n\\nConnect with local tech professionals and discover opportunities in your area.\\n\\nSee you soon!\\nLocal Events Team\",\n  \"city\": \"San Francisco\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/emails/send-filtered",
+              "host": ["{{baseUrl}}"],
+              "path": ["emails", "send-filtered"]
+            },
+            "description": "Send location-based emails to users in specific cities"
+          },
+          "response": []
+        },
+        {
+          "name": "Get Email Statistics",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/emails/stats",
+              "host": ["{{baseUrl}}"],
+              "path": ["emails", "stats"]
+            },
+            "description": "Get overall email campaign statistics"
+          },
+          "response": []
+        }
+      ],
+      "description": "Email management for sending campaigns and tracking delivery"
+    },
+    {
+      "name": "Email Tracking",
+      "item": [
+        {
+          "name": "Track Email Open (Pixel)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/track/open?emailId={{emailId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["track", "open"],
+              "query": [
+                {
+                  "key": "emailId",
+                  "value": "{{emailId}}"
+                }
+              ]
+            },
+            "description": "Track email opens via tracking pixel (returns 1x1 transparent image)"
+          },
+          "response": []
+        },
+        {
+          "name": "Get Email Tracking Status",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/track/status/{{emailId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["track", "status", "{{emailId}}"]
+            },
+            "description": "Get detailed tracking status for a specific email"
+          },
+          "response": []
+        }
+      ],
+      "description": "Email tracking endpoints for monitoring opens and engagement"
+    },
+    {
+      "name": "Sample Workflows",
+      "item": [
+        {
+          "name": "Complete User Journey",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/health",
+              "host": ["{{baseUrl}}"],
+              "path": ["health"]
+            },
+            "description": "This is a placeholder request. Use this folder to create custom workflows:\n\n1. Create User → Get User ID\n2. Create Event → Get Event ID \n3. Add User as Attendee\n4. Send Welcome Email\n5. Track Email Opens\n6. View User's Events\n7. Get Email Statistics\n\nUse the Test scripts in individual requests to automatically set variables and chain requests together."
+          },
+          "response": []
+        }
+      ],
+      "description": "Sample workflows demonstrating complete user journeys through the system"
+    }
+  ],
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// Global pre-request script",
+          "console.log('Making request to: ' + pm.request.url);"
+        ]
+      }
+    },
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// Global test script",
+          "pm.test('Response time is less than 5000ms', function () {",
+          "    pm.expect(pm.response.responseTime).to.be.below(5000);",
+          "});",
+          "",
+          "pm.test('Response has valid JSON', function () {",
+          "    if (pm.response.headers.get('Content-Type') && pm.response.headers.get('Content-Type').includes('application/json')) {",
+          "        pm.response.to.have.jsonBody();",
+          "    }",
+          "});"
+        ]
+      }
+    }
+  ]
+} 
