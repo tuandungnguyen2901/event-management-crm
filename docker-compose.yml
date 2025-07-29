@@ -1,0 +1,109 @@
+version: '3.8'
+
+services:
+  # FastAPI Application
+  api:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    container_name: event-crm-api
+    ports:
+      - "8000:8000"
+    environment:
+      # Database Configuration
+      - DYNAMODB_ENDPOINT_URL=http://dynamodb-local:8000
+      - AWS_REGION=us-east-1
+      - AWS_ACCESS_KEY_ID=dummy
+      - AWS_SECRET_ACCESS_KEY=dummy
+      
+      # Table Names for Local Development
+      - USERS_TABLE=UsersTable
+      - EVENTS_TABLE=EventsTable
+      - EMAIL_SENT_TABLE=EmailSentTable
+      
+      # Email Configuration
+      - EMAIL_MOCK_MODE=true
+      - SES_SENDER_EMAIL=noreply@example.com
+      - API_BASE_URL=http://localhost:8000
+      
+      # Development Settings
+      - DEBUG=true
+      - PYTHONPATH=/app
+    volumes:
+      # Mount source code for hot reload in development
+      - .:/app:cached
+      - /app/__pycache__
+      - /app/.pytest_cache
+    depends_on:
+      - dynamodb-local
+    networks:
+      - event-crm-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # DynamoDB Local for development
+  dynamodb-local:
+    image: amazon/dynamodb-local:latest
+    container_name: event-crm-dynamodb
+    ports:
+      - "8001:8000"  # Expose on different port to avoid conflict
+    command: ["-jar", "DynamoDBLocal.jar", "-sharedDb", "-dbPath", "./data"]
+    volumes:
+      - dynamodb_data:/home/dynamodblocal/data
+    working_dir: /home/dynamodblocal
+    networks:
+      - event-crm-network
+    restart: unless-stopped
+
+
+  # DynamoDB Admin (Web UI for DynamoDB Local)
+  dynamodb-admin:
+    image: aaronshaf/dynamodb-admin:latest
+    container_name: event-crm-dynamodb-admin
+    ports:
+      - "8002:8001"
+    environment:
+      - DYNAMO_ENDPOINT=http://dynamodb-local:8000
+      - AWS_REGION=us-east-1
+      - AWS_ACCESS_KEY_ID=dummy
+      - AWS_SECRET_ACCESS_KEY=dummy
+    depends_on:
+      - dynamodb-local
+    networks:
+      - event-crm-network
+    restart: unless-stopped
+
+  # Initialize DynamoDB tables
+  db-init:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    container_name: event-crm-db-init
+    environment:
+      - DYNAMODB_ENDPOINT_URL=http://dynamodb-local:8000
+      - AWS_REGION=us-east-1
+      - AWS_ACCESS_KEY_ID=dummy
+      - AWS_SECRET_ACCESS_KEY=dummy
+      - USERS_TABLE=UsersTable
+      - EVENTS_TABLE=EventsTable
+      - EMAIL_SENT_TABLE=EmailSentTable
+    volumes:
+      - .:/app:cached
+    depends_on:
+      - dynamodb-local
+    networks:
+      - event-crm-network
+    command: ["python", "scripts/init_db.py"]
+    restart: "no"
+
+networks:
+  event-crm-network:
+    driver: bridge
+
+volumes:
+  dynamodb_data:
+    driver: local 

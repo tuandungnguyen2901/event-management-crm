@@ -1,0 +1,651 @@
+service: event-management-crm
+
+frameworkVersion: '3'
+
+provider:
+  name: aws
+  runtime: python3.9
+  region: ${opt:region, 'us-east-1'}
+  stage: ${opt:stage, 'dev'}
+  
+  environment:
+    USERS_TABLE: ${self:custom.tablesName.users}
+    EVENTS_TABLE: ${self:custom.tablesName.events}
+    EMAIL_SENT_TABLE: ${self:custom.tablesName.emails}
+    AWS_REGION: ${self:provider.region}
+    SES_SENDER_EMAIL: ${env:SES_SENDER_EMAIL, 'noreply@example.com'}
+    EMAIL_MOCK_MODE: ${env:EMAIL_MOCK_MODE, 'false'}
+    API_BASE_URL: https://${self:custom.albDnsName}
+  
+  iam:
+    role:
+      statements:
+        - Effect: Allow
+          Action:
+            - dynamodb:Query
+            - dynamodb:Scan
+            - dynamodb:GetItem
+            - dynamodb:PutItem
+            - dynamodb:UpdateItem
+            - dynamodb:DeleteItem
+            - dynamodb:BatchGetItem
+            - dynamodb:BatchWriteItem
+          Resource:
+            - "arn:aws:dynamodb:${self:provider.region}:*:table/${self:custom.tablesName.users}"
+            - "arn:aws:dynamodb:${self:provider.region}:*:table/${self:custom.tablesName.users}/index/*"
+            - "arn:aws:dynamodb:${self:provider.region}:*:table/${self:custom.tablesName.events}"
+            - "arn:aws:dynamodb:${self:provider.region}:*:table/${self:custom.tablesName.events}/index/*"
+            - "arn:aws:dynamodb:${self:provider.region}:*:table/${self:custom.tablesName.emails}"
+            - "arn:aws:dynamodb:${self:provider.region}:*:table/${self:custom.tablesName.emails}/index/*"
+        - Effect: Allow
+          Action:
+            - ses:SendEmail
+            - ses:SendRawEmail
+          Resource: "*"
+        - Effect: Allow
+          Action:
+            - logs:CreateLogGroup
+            - logs:CreateLogStream
+            - logs:PutLogEvents
+          Resource: "*"
+
+custom:
+  tablesName:
+    users: ${self:service}-users-${self:provider.stage}
+    events: ${self:service}-events-${self:provider.stage}
+    emails: ${self:service}-emails-${self:provider.stage}
+  
+  # ALB DNS name for API access
+  albDnsName: 
+    Fn::GetAtt: [ApplicationLoadBalancer, DNSName]
+  
+  # ECS Configuration
+  ecsClusterName: ${self:service}-cluster-${self:provider.stage}
+  ecsServiceName: ${self:service}-service-${self:provider.stage}
+  containerImageUri: ${env:CONTAINER_IMAGE_URI, '${aws:accountId}.dkr.ecr.${self:provider.region}.amazonaws.com/${self:service}-${self:provider.stage}:latest'}
+
+# Lambda functions (keeping stream processor as Lambda)
+functions:
+  eventStreamProcessor:
+    handler: lambdas.event_stream_handler.lambda_handler
+    description: DynamoDB Stream processor for event count tracking
+    timeout: 30
+    memorySize: 512
+    events:
+      - stream:
+          type: dynamodb
+          arn:
+            Fn::GetAtt: [EventsTable, StreamArn]
+          batchSize: 10
+          startingPosition: LATEST
+          maximumRetryAttempts: 3
+
+resources:
+  Resources:
+    # VPC for Fargate
+    VPC:
+      Type: AWS::EC2::VPC
+      Properties:
+        CidrBlock: 10.0.0.0/16
+        EnableDnsHostnames: true
+        EnableDnsSupport: true
+        Tags:
+          - Key: Name
+            Value: ${self:service}-vpc-${self:provider.stage}
+
+    # Internet Gateway
+    InternetGateway:
+      Type: AWS::EC2::InternetGateway
+      Properties:
+        Tags:
+          - Key: Name
+            Value: ${self:service}-igw-${self:provider.stage}
+
+    InternetGatewayAttachment:
+      Type: AWS::EC2::VPCGatewayAttachment
+      Properties:
+        InternetGatewayId: !Ref InternetGateway
+        VpcId: !Ref VPC
+
+    # Public Subnets
+    PublicSubnet1:
+      Type: AWS::EC2::Subnet
+      Properties:
+        VpcId: !Ref VPC
+        AvailabilityZone: !Select [0, !GetAZs '']
+        CidrBlock: 10.0.1.0/24
+        MapPublicIpOnLaunch: true
+        Tags:
+          - Key: Name
+            Value: ${self:service}-public-subnet-1-${self:provider.stage}
+
+    PublicSubnet2:
+      Type: AWS::EC2::Subnet
+      Properties:
+        VpcId: !Ref VPC
+        AvailabilityZone: !Select [1, !GetAZs '']
+        CidrBlock: 10.0.2.0/24
+        MapPublicIpOnLaunch: true
+        Tags:
+          - Key: Name
+            Value: ${self:service}-public-subnet-2-${self:provider.stage}
+
+    # Route Table
+    PublicRouteTable:
+      Type: AWS::EC2::RouteTable
+      Properties:
+        VpcId: !Ref VPC
+        Tags:
+          - Key: Name
+            Value: ${self:service}-public-routes-${self:provider.stage}
+
+    DefaultPublicRoute:
+      Type: AWS::EC2::Route
+      DependsOn: InternetGatewayAttachment
+      Properties:
+        RouteTableId: !Ref PublicRouteTable
+        DestinationCidrBlock: 0.0.0.0/0
+        GatewayId: !Ref InternetGateway
+
+    PublicSubnet1RouteTableAssociation:
+      Type: AWS::EC2::SubnetRouteTableAssociation
+      Properties:
+        RouteTableId: !Ref PublicRouteTable
+        SubnetId: !Ref PublicSubnet1
+
+    PublicSubnet2RouteTableAssociation:
+      Type: AWS::EC2::SubnetRouteTableAssociation
+      Properties:
+        RouteTableId: !Ref PublicRouteTable
+        SubnetId: !Ref PublicSubnet2
+
+    # Security Groups
+    LoadBalancerSecurityGroup:
+      Type: AWS::EC2::SecurityGroup
+      Properties:
+        GroupDescription: Access to the public facing load balancer
+        VpcId: !Ref VPC
+        SecurityGroupIngress:
+          - IpProtocol: tcp
+            FromPort: 80
+            ToPort: 80
+            CidrIp: 0.0.0.0/0
+          - IpProtocol: tcp
+            FromPort: 443
+            ToPort: 443
+            CidrIp: 0.0.0.0/0
+        Tags:
+          - Key: Name
+            Value: ${self:service}-alb-sg-${self:provider.stage}
+
+    ECSSecurityGroup:
+      Type: AWS::EC2::SecurityGroup
+      Properties:
+        GroupDescription: Access to the ECS containers
+        VpcId: !Ref VPC
+        SecurityGroupIngress:
+          - IpProtocol: tcp
+            FromPort: 8000
+            ToPort: 8000
+            SourceSecurityGroupId: !Ref LoadBalancerSecurityGroup
+        Tags:
+          - Key: Name
+            Value: ${self:service}-ecs-sg-${self:provider.stage}
+
+    # Application Load Balancer
+    ApplicationLoadBalancer:
+      Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+      Properties:
+        Name: ${self:service}-alb-${self:provider.stage}
+        Scheme: internet-facing
+        LoadBalancerAttributes:
+          - Key: idle_timeout.timeout_seconds
+            Value: '30'
+        Subnets:
+          - !Ref PublicSubnet1
+          - !Ref PublicSubnet2
+        SecurityGroups:
+          - !Ref LoadBalancerSecurityGroup
+        Tags:
+          - Key: Name
+            Value: ${self:service}-alb-${self:provider.stage}
+
+    TargetGroup:
+      Type: AWS::ElasticLoadBalancingV2::TargetGroup
+      Properties:
+        Name: ${self:service}-tg-${self:provider.stage}
+        Port: 8000
+        Protocol: HTTP
+        VpcId: !Ref VPC
+        TargetType: ip
+        HealthCheckIntervalSeconds: 30
+        HealthCheckPath: /health
+        HealthCheckProtocol: HTTP
+        HealthCheckTimeoutSeconds: 5
+        HealthyThresholdCount: 2
+        UnhealthyThresholdCount: 3
+        TargetGroupAttributes:
+          - Key: deregistration_delay.timeout_seconds
+            Value: '60'
+
+    LoadBalancerListener:
+      Type: AWS::ElasticLoadBalancingV2::Listener
+      Properties:
+        DefaultActions:
+          - Type: forward
+            TargetGroupArn: !Ref TargetGroup
+        LoadBalancerArn: !Ref ApplicationLoadBalancer
+        Port: 80
+        Protocol: HTTP
+
+    # ECR Repository
+    ECRRepository:
+      Type: AWS::ECR::Repository
+      Properties:
+        RepositoryName: ${self:service}-${self:provider.stage}
+        ImageScanningConfiguration:
+          ScanOnPush: true
+        LifecyclePolicy:
+          LifecyclePolicyText: |
+            {
+              "rules": [
+                {
+                  "rulePriority": 1,
+                  "description": "Keep last 10 images",
+                  "selection": {
+                    "tagStatus": "any",
+                    "countType": "imageCountMoreThan",
+                    "countNumber": 10
+                  },
+                  "action": {
+                    "type": "expire"
+                  }
+                }
+              ]
+            }
+
+    # ECS Cluster
+    ECSCluster:
+      Type: AWS::ECS::Cluster
+      Properties:
+        ClusterName: ${self:custom.ecsClusterName}
+        CapacityProviders:
+          - FARGATE
+          - FARGATE_SPOT
+        DefaultCapacityProviderStrategy:
+          - CapacityProvider: FARGATE
+            Weight: 1
+        ClusterSettings:
+          - Name: containerInsights
+            Value: enabled
+
+    # CloudWatch Log Group
+    LogGroup:
+      Type: AWS::Logs::LogGroup
+      Properties:
+        LogGroupName: /ecs/${self:service}-${self:provider.stage}
+        RetentionInDays: 14
+
+    # ECS Task Execution Role
+    ECSTaskExecutionRole:
+      Type: AWS::IAM::Role
+      Properties:
+        AssumeRolePolicyDocument:
+          Statement:
+            - Effect: Allow
+              Principal:
+                Service: ecs-tasks.amazonaws.com
+              Action: sts:AssumeRole
+        ManagedPolicyArns:
+          - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+        Policies:
+          - PolicyName: ECRAccess
+            PolicyDocument:
+              Statement:
+                - Effect: Allow
+                  Action:
+                    - ecr:GetAuthorizationToken
+                    - ecr:BatchCheckLayerAvailability
+                    - ecr:GetDownloadUrlForLayer
+                    - ecr:BatchGetImage
+                  Resource: "*"
+
+    # ECS Task Role
+    ECSTaskRole:
+      Type: AWS::IAM::Role
+      Properties:
+        AssumeRolePolicyDocument:
+          Statement:
+            - Effect: Allow
+              Principal:
+                Service: ecs-tasks.amazonaws.com
+              Action: sts:AssumeRole
+        Policies:
+          - PolicyName: DynamoDBAccess
+            PolicyDocument:
+              Statement:
+                - Effect: Allow
+                  Action:
+                    - dynamodb:Query
+                    - dynamodb:Scan
+                    - dynamodb:GetItem
+                    - dynamodb:PutItem
+                    - dynamodb:UpdateItem
+                    - dynamodb:DeleteItem
+                    - dynamodb:BatchGetItem
+                    - dynamodb:BatchWriteItem
+                  Resource:
+                    - !GetAtt UsersTable.Arn
+                    - !Sub "${UsersTable.Arn}/index/*"
+                    - !GetAtt EventsTable.Arn
+                    - !Sub "${EventsTable.Arn}/index/*"
+                    - !GetAtt EmailSentTable.Arn
+                    - !Sub "${EmailSentTable.Arn}/index/*"
+          - PolicyName: SESAccess
+            PolicyDocument:
+              Statement:
+                - Effect: Allow
+                  Action:
+                    - ses:SendEmail
+                    - ses:SendRawEmail
+                  Resource: "*"
+
+    # ECS Task Definition
+    ECSTaskDefinition:
+      Type: AWS::ECS::TaskDefinition
+      Properties:
+        Family: ${self:service}-${self:provider.stage}
+        Cpu: 512
+        Memory: 1024
+        NetworkMode: awsvpc
+        RequiresCompatibilities:
+          - FARGATE
+        ExecutionRoleArn: !Ref ECSTaskExecutionRole
+        TaskRoleArn: !Ref ECSTaskRole
+        ContainerDefinitions:
+          - Name: api
+            Image: ${self:custom.containerImageUri}
+            PortMappings:
+              - ContainerPort: 8000
+                Protocol: tcp
+            Environment:
+              - Name: USERS_TABLE
+                Value: ${self:custom.tablesName.users}
+              - Name: EVENTS_TABLE
+                Value: ${self:custom.tablesName.events}
+              - Name: EMAIL_SENT_TABLE
+                Value: ${self:custom.tablesName.emails}
+              - Name: AWS_REGION
+                Value: ${self:provider.region}
+              - Name: SES_SENDER_EMAIL
+                Value: ${env:SES_SENDER_EMAIL, 'noreply@example.com'}
+              - Name: EMAIL_MOCK_MODE
+                Value: ${env:EMAIL_MOCK_MODE, 'false'}
+              - Name: API_BASE_URL
+                Value: !Sub "https://${ApplicationLoadBalancer.DNSName}"
+            LogConfiguration:
+              LogDriver: awslogs
+              Options:
+                awslogs-group: !Ref LogGroup
+                awslogs-region: ${self:provider.region}
+                awslogs-stream-prefix: ecs
+            HealthCheck:
+              Command:
+                - CMD-SHELL
+                - curl -f http://localhost:8000/health || exit 1
+              Interval: 30
+              Timeout: 5
+              Retries: 3
+              StartPeriod: 60
+
+    # ECS Service
+    ECSService:
+      Type: AWS::ECS::Service
+      DependsOn: LoadBalancerListener
+      Properties:
+        ServiceName: ${self:custom.ecsServiceName}
+        Cluster: !Ref ECSCluster
+        LaunchType: FARGATE
+        DeploymentConfiguration:
+          MaximumPercent: 200
+          MinimumHealthyPercent: 50
+        DesiredCount: 2
+        NetworkConfiguration:
+          AwsvpcConfiguration:
+            AssignPublicIp: ENABLED
+            SecurityGroups:
+              - !Ref ECSSecurityGroup
+            Subnets:
+              - !Ref PublicSubnet1
+              - !Ref PublicSubnet2
+        TaskDefinition: !Ref ECSTaskDefinition
+        LoadBalancers:
+          - ContainerName: api
+            ContainerPort: 8000
+            TargetGroupArn: !Ref TargetGroup
+        EnableExecuteCommand: true
+
+    # Auto Scaling
+    AutoScalingTarget:
+      Type: AWS::ApplicationAutoScaling::ScalableTarget
+      Properties:
+        MaxCapacity: 10
+        MinCapacity: 2
+        ResourceId: !Sub "service/${ECSCluster}/${ECSService.Name}"
+        RoleARN: !Sub "arn:aws:iam::${AWS::AccountId}:role/aws-service-role/ecs.application-autoscaling.amazonaws.com/AWSServiceRoleForApplicationAutoScaling_ECSService"
+        ScalableDimension: ecs:service:DesiredCount
+        ServiceNamespace: ecs
+
+    AutoScalingPolicy:
+      Type: AWS::ApplicationAutoScaling::ScalingPolicy
+      Properties:
+        PolicyName: ${self:service}-scaling-policy-${self:provider.stage}
+        PolicyType: TargetTrackingScaling
+        ScalingTargetId: !Ref AutoScalingTarget
+        TargetTrackingScalingPolicyConfiguration:
+          PredefinedMetricSpecification:
+            PredefinedMetricType: ECSServiceAverageCPUUtilization
+          TargetValue: 70.0
+          ScaleOutCooldown: 300
+          ScaleInCooldown: 300
+
+    # DynamoDB Tables
+    UsersTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ${self:custom.tablesName.users}
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: id
+            AttributeType: S
+          - AttributeName: company
+            AttributeType: S
+          - AttributeName: jobTitle
+            AttributeType: S
+          - AttributeName: city
+            AttributeType: S
+          - AttributeName: email
+            AttributeType: S
+        KeySchema:
+          - AttributeName: id
+            KeyType: HASH
+        GlobalSecondaryIndexes:
+          - IndexName: company-index
+            KeySchema:
+              - AttributeName: company
+                KeyType: HASH
+            Projection:
+              ProjectionType: ALL
+          - IndexName: jobTitle-index
+            KeySchema:
+              - AttributeName: jobTitle
+                KeyType: HASH
+            Projection:
+              ProjectionType: ALL
+          - IndexName: city-index
+            KeySchema:
+              - AttributeName: city
+                KeyType: HASH
+            Projection:
+              ProjectionType: ALL
+          - IndexName: email-index
+            KeySchema:
+              - AttributeName: email
+                KeyType: HASH
+            Projection:
+              ProjectionType: ALL
+        StreamSpecification:
+          StreamEnabled: true
+          StreamViewType: NEW_AND_OLD_IMAGES
+        PointInTimeRecoverySpecification:
+          PointInTimeRecoveryEnabled: true
+        Tags:
+          - Key: Service
+            Value: ${self:service}
+          - Key: Stage
+            Value: ${self:provider.stage}
+
+    EventsTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ${self:custom.tablesName.events}
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: id
+            AttributeType: S
+          - AttributeName: slug
+            AttributeType: S
+          - AttributeName: owner
+            AttributeType: S
+        KeySchema:
+          - AttributeName: id
+            KeyType: HASH
+        GlobalSecondaryIndexes:
+          - IndexName: slug-index
+            KeySchema:
+              - AttributeName: slug
+                KeyType: HASH
+            Projection:
+              ProjectionType: ALL
+          - IndexName: owner-index
+            KeySchema:
+              - AttributeName: owner
+                KeyType: HASH
+            Projection:
+              ProjectionType: ALL
+        StreamSpecification:
+          StreamEnabled: true
+          StreamViewType: NEW_AND_OLD_IMAGES
+        PointInTimeRecoverySpecification:
+          PointInTimeRecoveryEnabled: true
+        Tags:
+          - Key: Service
+            Value: ${self:service}
+          - Key: Stage
+            Value: ${self:provider.stage}
+
+    EmailSentTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ${self:custom.tablesName.emails}
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: id
+            AttributeType: S
+          - AttributeName: userId
+            AttributeType: S
+          - AttributeName: status
+            AttributeType: S
+        KeySchema:
+          - AttributeName: id
+            KeyType: HASH
+        GlobalSecondaryIndexes:
+          - IndexName: userId-index
+            KeySchema:
+              - AttributeName: userId
+                KeyType: HASH
+            Projection:
+              ProjectionType: ALL
+          - IndexName: status-index
+            KeySchema:
+              - AttributeName: status
+                KeyType: HASH
+            Projection:
+              ProjectionType: ALL
+        PointInTimeRecoverySpecification:
+          PointInTimeRecoveryEnabled: true
+        Tags:
+          - Key: Service
+            Value: ${self:service}
+          - Key: Stage
+            Value: ${self:provider.stage}
+
+  Outputs:
+    ApplicationLoadBalancerDNS:
+      Description: "Application Load Balancer DNS name"
+      Value: !GetAtt ApplicationLoadBalancer.DNSName
+      Export:
+        Name: ${self:service}-alb-dns-${self:provider.stage}
+    
+    ApplicationLoadBalancerURL:
+      Description: "Application Load Balancer URL"
+      Value: !Sub "http://${ApplicationLoadBalancer.DNSName}"
+      Export:
+        Name: ${self:service}-alb-url-${self:provider.stage}
+    
+    ECSClusterName:
+      Description: "ECS Cluster Name"
+      Value: !Ref ECSCluster
+      Export:
+        Name: ${self:service}-ecs-cluster-${self:provider.stage}
+    
+    ECSServiceName:
+      Description: "ECS Service Name"
+      Value: !Ref ECSService
+      Export:
+        Name: ${self:service}-ecs-service-${self:provider.stage}
+    
+    ECRRepositoryURI:
+      Description: "ECR Repository URI"
+      Value: !Sub "${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/${ECRRepository}"
+      Export:
+        Name: ${self:service}-ecr-uri-${self:provider.stage}
+    
+    VPCId:
+      Description: "VPC ID"
+      Value: !Ref VPC
+      Export:
+        Name: ${self:service}-vpc-${self:provider.stage}
+    
+    UsersTableName:
+      Description: "Users DynamoDB Table Name"
+      Value: ${self:custom.tablesName.users}
+      Export:
+        Name: ${self:service}-users-table-${self:provider.stage}
+    
+    EventsTableName:
+      Description: "Events DynamoDB Table Name"
+      Value: ${self:custom.tablesName.events}
+      Export:
+        Name: ${self:service}-events-table-${self:provider.stage}
+    
+    EmailSentTableName:
+      Description: "EmailSent DynamoDB Table Name"
+      Value: ${self:custom.tablesName.emails}
+      Export:
+        Name: ${self:service}-emails-table-${self:provider.stage}
+
+plugins:
+  - serverless-python-requirements
+  # - serverless-domain-manager  # Uncomment to use custom domain
+
+package:
+  patterns:
+    - '!node_modules/**'
+    - '!.venv/**'
+    - '!__pycache__/**'
+    - '!.pytest_cache/**'
+    - '!.git/**'
+    - '!.gitignore'
+    - '!README.md'
+    - '!tests/**' 
